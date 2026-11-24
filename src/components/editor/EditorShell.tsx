@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addBidirectionalLink,
   cloneLayout,
+  DEFAULT_PALETTE,
   directionBetween,
   effectivePageType,
+  hasLink,
   isHomePage,
   normalizeLayout,
   OPPOSITE,
   pageAt,
+  type CustomPalette,
   type LayoutDocument,
   type Page,
   type SwipeDirection,
@@ -17,11 +20,12 @@ import {
 import { useLayoutStore } from "@/lib/useLayoutStore";
 import { findNewStrandingError, validateLayout, type ValidationIssue } from "@/lib/validate";
 import { Inspector } from "./Inspector";
+import { LayoutPanel } from "./LayoutPanel";
 import { MapEditor } from "./MapEditor";
 import { ValidationPanel } from "./ValidationPanel";
 
 type Notice = { kind: "error" | "info"; text: string };
-type Tab = "inspect" | "issues";
+type Tab = "inspect" | "layout" | "issues";
 
 function pageLabel(page: Page): string {
   return page.title || `Page ${page.coordX},${page.coordY}`;
@@ -213,6 +217,36 @@ export function EditorShell() {
         !(edge.fromPageId === targetPageId && edge.swipeDirection === opposite && edge.toPageId === pageId),
     );
     commit(next, "Cannot remove link:");
+  };
+
+  const toggleLinkState = (pageId: number, targetPageId: number, dir: SwipeDirection) => {
+    const from = layout.pages.find((p) => p.pageId === pageId);
+    const to = layout.pages.find((p) => p.pageId === targetPageId);
+    if (!from || !to) return;
+    if (hasLink(layout.edges, from, to)) {
+      removeLink(pageId, targetPageId, dir);
+    } else {
+      toggleLink(pageId, targetPageId, dir);
+    }
+  };
+
+  const updateSettings = (patch: Partial<LayoutDocument>) => {
+    const next = cloneLayout(layout);
+    Object.assign(next, patch);
+    if (next.theme === "CUSTOM" && !next.customPalette) next.customPalette = { ...DEFAULT_PALETTE };
+    setLayout(next);
+  };
+
+  const updatePalette = (key: keyof CustomPalette, value: string) => {
+    const next = cloneLayout(layout);
+    next.customPalette = { ...(next.customPalette ?? DEFAULT_PALETTE), [key]: value };
+    setLayout(next);
+  };
+
+  const resetPalette = () => {
+    const next = cloneLayout(layout);
+    next.customPalette = { ...DEFAULT_PALETTE };
+    setLayout(next);
   };
 
   const deletePage = (pageId: number) => {
@@ -407,7 +441,7 @@ export function EditorShell() {
             onSelectPage={setSelectedPageId}
             onMovePage={movePage}
             onAddPage={addPage}
-            onToggleLink={toggleLink}
+            onToggleLink={toggleLinkState}
           />
         </main>
 
@@ -421,6 +455,15 @@ export function EditorShell() {
               onClick={() => setTab("inspect")}
             >
               Inspect
+            </button>
+            <button
+              type="button"
+              className={`flex-1 px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.15em] transition ${
+                tab === "layout" ? "text-[#ededed]" : "text-[#6b6157] hover:text-[#a8a29a]"
+              }`}
+              onClick={() => setTab("layout")}
+            >
+              Layout
             </button>
             <button
               type="button"
@@ -449,6 +492,13 @@ export function EditorShell() {
                 onToggleLink={toggleLink}
                 onRemoveLink={removeLink}
                 onDeletePage={deletePage}
+              />
+            ) : tab === "layout" ? (
+              <LayoutPanel
+                layout={layout}
+                onChange={updateSettings}
+                onPaletteChange={updatePalette}
+                onPaletteReset={resetPalette}
               />
             ) : (
               <ValidationPanel issues={issues} onSelectIssue={handleSelectIssue} />

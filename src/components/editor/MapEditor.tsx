@@ -64,19 +64,8 @@ interface PageDrag {
   moved: boolean;
 }
 
-const SLOTS: {
-  key: string;
-  dx: number;
-  dy: number;
-  dir: SwipeDirection;
-  position: string;
-  label: string;
-}[] = [
-  { key: "above", dx: 0, dy: 1, dir: "DOWN", position: "left-1/2 top-0 -translate-x-1/2 -translate-y-1/2", label: "above" },
-  { key: "right", dx: 1, dy: 0, dir: "RIGHT", position: "right-0 top-1/2 translate-x-1/2 -translate-y-1/2", label: "right" },
-  { key: "below", dx: 0, dy: -1, dir: "UP", position: "bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2", label: "below" },
-  { key: "left", dx: -1, dy: 0, dir: "LEFT", position: "left-0 top-1/2 -translate-x-1/2 -translate-y-1/2", label: "left" },
-];
+const GRID_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="${STRIDE_X}" height="${STRIDE_Y}"><path d="M 0 0 V ${STRIDE_Y} M 0 0 H ${STRIDE_X}" stroke="#262626" stroke-width="1" stroke-dasharray="2 6" fill="none"/></svg>`;
+const GRID_BG = `url("data:image/svg+xml,${encodeURIComponent(GRID_SVG)}")`;
 
 function controlButton(active = false): string {
   return [
@@ -132,6 +121,38 @@ export function MapEditor({
     }
     return candidates;
   }, [layout.pages, pagesByCoord]);
+
+  const linkArrows = useMemo(() => {
+    const arrows: {
+      key: string;
+      from: Page;
+      to: Page;
+      dir: SwipeDirection;
+      x: number;
+      y: number;
+      horizontal: boolean;
+      linked: boolean;
+    }[] = [];
+    for (const page of layout.pages) {
+      for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+        const other = pagesByCoord.get(`${page.coordX + dx},${page.coordY + dy}`);
+        if (!other) continue;
+        const a = cellCenterForCoord(page.coordX, page.coordY, bounds);
+        const b = cellCenterForCoord(other.coordX, other.coordY, bounds);
+        arrows.push({
+          key: `${page.pageId}-${other.pageId}`,
+          from: page,
+          to: other,
+          dir: dx !== 0 ? "RIGHT" : "DOWN",
+          x: (a.x + b.x) / 2,
+          y: (a.y + b.y) / 2,
+          horizontal: dx !== 0,
+          linked: hasLink(layout.edges, page, other),
+        });
+      }
+    }
+    return arrows;
+  }, [layout.pages, layout.edges, pagesByCoord, bounds]);
 
   useEffect(() => {
     viewRef.current = { pan, scale };
@@ -331,6 +352,16 @@ export function MapEditor({
       onPointerCancel={handleContainerPointerUp}
     >
       <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage: GRID_BG,
+          backgroundSize: `${STRIDE_X * scale}px ${STRIDE_Y * scale}px`,
+          backgroundPosition: `${pan.x}px ${pan.y}px`,
+        }}
+      />
+
+      <div
         className="absolute left-0 top-0 origin-top-left"
         style={{
           width: world.width,
@@ -339,14 +370,9 @@ export function MapEditor({
         }}
       >
         <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "radial-gradient(circle, #2a2a2a 1px, transparent 1px)",
-            backgroundSize: `${STRIDE_X}px ${STRIDE_Y}px`,
-            backgroundPosition: `${STRIDE_X / 2}px ${STRIDE_Y / 2}px`,
-          }}
+          className="absolute rounded-sm border border-dashed border-[#2a2a2a]"
+          style={{ left: 0, top: 0, width: world.width, height: world.height }}
         />
-        <div className="absolute border border-[#242424]" style={{ left: 0, top: 0, width: world.width, height: world.height }} />
 
         {addCandidates.map((candidate) => {
           const center = cellCenterForCoord(candidate.x, candidate.y, bounds);
@@ -427,42 +453,35 @@ export function MapEditor({
                 </div>
               </div>
 
-              {SLOTS.map((slot) => {
-                const neighbor = pagesByCoord.get(`${page.coordX + slot.dx},${page.coordY + slot.dy}`);
-                if (!neighbor) {
-                  return (
-                    <div
-                      key={slot.key}
-                      className={`absolute h-[2px] w-[8px] bg-[#2a2a2a] ${slot.position}`}
-                      aria-hidden
-                    />
-                  );
-                }
-                const linked = hasLink(layout.edges, page, neighbor);
-                return (
-                  <button
-                    key={slot.key}
-                    type="button"
-                    title={linked ? `Linked to ${neighbor.title || `Page ${neighbor.coordX},${neighbor.coordY}`}` : `Link to ${neighbor.title || `Page ${neighbor.coordX},${neighbor.coordY}`}`}
-                    aria-label={linked ? `Unlink page ${slot.label}` : `Link page ${slot.label}`}
-                    className={`absolute z-20 flex h-[18px] w-[18px] items-center justify-center rounded-full border text-[8px] transition ${
-                      linked
-                        ? "border-[#e6e2d8] bg-[#e6e2d8] text-[#080808]"
-                        : "border-[#3a3a3a] bg-[#141414] text-[#a8a29a] hover:border-[#e6e2d8]"
-                    } ${slot.position}`}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onToggleLink(page.pageId, neighbor.pageId, slot.dir);
-                    }}
-                  >
-                    {linked ? "•" : ""}
-                  </button>
-                );
-              })}
             </div>
           );
         })}
+        {linkArrows.map((arrow) => (
+          <button
+            key={arrow.key}
+            type="button"
+            title={
+              arrow.linked
+                ? `Unlink ${arrow.from.title || "page"} and ${arrow.to.title || "page"}`
+                : `Link ${arrow.from.title || "page"} and ${arrow.to.title || "page"}`
+            }
+            aria-label={arrow.linked ? "Unlink pages" : "Link pages"}
+            aria-pressed={arrow.linked}
+            className={`absolute z-20 flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border text-[11px] leading-none transition ${
+              arrow.linked
+                ? "border-[#e6e2d8] bg-[#e6e2d8] text-[#080808]"
+                : "border-[#3a3a3a] bg-[#0b0b0b] text-[#5a5a5a] hover:border-[#e6e2d8] hover:text-[#e6e2d8]"
+            }`}
+            style={{ left: arrow.x, top: arrow.y }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onToggleLink(arrow.from.pageId, arrow.to.pageId, arrow.dir);
+            }}
+          >
+            {arrow.horizontal ? "↔" : "↕"}
+          </button>
+        ))}
       </div>
 
       <div

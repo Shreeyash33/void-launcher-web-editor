@@ -173,6 +173,17 @@ export const PALETTE_KEYS = [
   "outline",
 ] as const;
 
+export const DEFAULT_PALETTE: CustomPalette = {
+  background: "#080808",
+  surface: "#141414",
+  surfaceVariant: "#202020",
+  onBackground: "#ededed",
+  onSurface: "#a8a29a",
+  primary: "#e6e2d8",
+  secondary: "#6b6157",
+  outline: "#3a3a3a",
+};
+
 const THEMES: ThemeMode[] = ["SYSTEM", "DARK", "LIGHT", "CUSTOM"];
 const ORIENTATIONS: OrientationMode[] = ["PORTRAIT", "LANDSCAPE", "AUTO"];
 

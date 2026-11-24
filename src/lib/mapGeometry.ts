@@ -7,7 +7,7 @@ export const STRIDE_X = TILE_WIDTH + GAP;
 export const STRIDE_Y = TILE_HEIGHT + GAP;
 export const MIN_SCALE = 0.35;
 export const MAX_SCALE = 2.5;
-export const MARGIN_CELLS = 2;
+export const MARGIN_CELLS = 3;
 
 export interface MapBounds {
   minX: number;
