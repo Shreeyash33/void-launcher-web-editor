@@ -65,6 +65,21 @@ export async function saveLayout(layout: LayoutDocument): Promise<void> {
   await writeValue(LAYOUT_KEY, layout);
 }
 
+export const INVENTORY_KEY = "inventory";
+export const BUNDLE_KEY = "bundle";
+
+export async function loadDocument<T>(key: string): Promise<T | null> {
+  try {
+    return await readValue<T>(key);
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDocument<T>(key: string, value: T): Promise<void> {
+  await writeValue(key, value);
+}
+
 export function canonicalFallback(): LayoutDocument {
   return createCanonicalLayout();
 }

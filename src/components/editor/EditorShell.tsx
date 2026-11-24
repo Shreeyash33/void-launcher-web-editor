@@ -10,15 +10,19 @@ import {
   hasLink,
   isHomePage,
   normalizeLayout,
+  normalizeInventory,
   OPPOSITE,
   pageAt,
   type CustomPalette,
+  type GridItem,
   type LayoutDocument,
   type Page,
   type SwipeDirection,
 } from "@/lib/model";
+import { useInventoryStore } from "@/lib/useInventoryStore";
 import { useLayoutStore } from "@/lib/useLayoutStore";
 import { findNewStrandingError, validateLayout, type ValidationIssue } from "@/lib/validate";
+import { GridView } from "./GridView";
 import { Inspector } from "./Inspector";
 import { LayoutPanel } from "./LayoutPanel";
 import { MapEditor } from "./MapEditor";
@@ -33,10 +37,14 @@ function pageLabel(page: Page): string {
 
 export function EditorShell() {
   const { layout, setLayout, hydrated, saving, saveError, resetToCanonical } = useLayoutStore();
+  const { inventory, setInventory } = useInventoryStore();
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null);
+  const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
+  const [view, setView] = useState<"map" | "grid">("map");
   const [tab, setTab] = useState<Tab>("inspect");
   const [notice, setNotice] = useState<Notice | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inventoryRef = useRef<HTMLInputElement>(null);
 
   const issues = useMemo(() => validateLayout(layout), [layout]);
   const invalidPageIds = useMemo(() => {
@@ -271,7 +279,46 @@ export function EditorShell() {
 
     if (commit(next, "Cannot delete page:")) {
       setSelectedPageId(null);
+      setSelectedItemIndex(null);
       flash("info", `Deleted ${pageLabel(page)}.`);
+    }
+  };
+
+  const addItem = (draft: Omit<GridItem, "pageCoordX" | "pageCoordY">) => {
+    if (!selectedPage) return;
+    const next = cloneLayout(layout);
+    next.items.push({ ...draft, pageCoordX: selectedPage.coordX, pageCoordY: selectedPage.coordY });
+    setLayout(next);
+    setSelectedItemIndex(next.items.length - 1);
+  };
+
+  const updateItem = (index: number, patch: Partial<GridItem>) => {
+    const next = cloneLayout(layout);
+    const item = next.items[index];
+    if (!item) return;
+    Object.assign(item, patch);
+    setLayout(next);
+  };
+
+  const deleteItem = (index: number) => {
+    const next = cloneLayout(layout);
+    if (!next.items[index]) return;
+    next.items.splice(index, 1);
+    setLayout(next);
+    setSelectedItemIndex(null);
+  };
+
+  const handleInventoryFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const next = normalizeInventory(JSON.parse(text) as unknown);
+      setInventory(next);
+      flash(
+        "info",
+        `Loaded inventory: ${next.apps.length} apps, ${next.systemWidgets.length} system widgets.`,
+      );
+    } catch {
+      flash("error", `Could not read ${file.name}. Expected voidlauncher-inventory.json.`);
     }
   };
 
@@ -346,6 +393,29 @@ export function EditorShell() {
           </div>
         </div>
 
+        <div className="flex items-center gap-0.5 rounded-lg border border-[#242424] bg-[#080808] p-0.5">
+          {(["map", "grid"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={`rounded-md px-3 py-1 font-mono text-[10px] uppercase tracking-[0.15em] transition ${
+                view === mode ? "bg-[#e6e2d8] text-[#080808]" : "text-[#6b6157] hover:text-[#e6e2d8]"
+              }`}
+              onClick={() => {
+                setView(mode);
+                if (mode === "grid" && selectedPageId === null) {
+                  const home =
+                    layout.pages.find((p) => p.coordX === layout.homeCoordX && p.coordY === layout.homeCoordY) ??
+                    layout.pages[0];
+                  if (home) setSelectedPageId(home.pageId);
+                }
+              }}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-center gap-1.5">
           <span
             className={`mr-2 hidden font-mono text-[10px] sm:inline ${
@@ -355,6 +425,15 @@ export function EditorShell() {
           >
             {saveLabel}
           </span>
+          <button
+            type="button"
+            title={inventory ? `${inventory.apps.length} apps · ${inventory.systemWidgets.length} system widgets` : "Import voidlauncher-inventory.json"}
+            className="flex items-center gap-1.5 rounded-lg border border-[#3a3a3a] bg-[#141414] px-2.5 py-1.5 font-mono text-[10px] text-[#a8a29a] transition hover:border-[#e6e2d8] hover:text-[#e6e2d8]"
+            onClick={() => inventoryRef.current?.click()}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${inventory ? "bg-[#4ade80]" : "bg-[#3a3a3a]"}`} />
+            Inventory
+          </button>
           <button
             type="button"
             className="rounded-lg border border-[#3a3a3a] bg-[#141414] px-2.5 py-1.5 font-mono text-[10px] text-[#a8a29a] transition hover:border-[#e6e2d8] hover:text-[#e6e2d8]"
@@ -387,6 +466,17 @@ export function EditorShell() {
               if (file) void handleImportFile(file);
             }}
           />
+          <input
+            ref={inventoryRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void handleInventoryFile(file);
+            }}
+          />
         </div>
       </header>
 
@@ -406,6 +496,7 @@ export function EditorShell() {
                     type="button"
                     onClick={() => {
                       setSelectedPageId(page.pageId);
+                      setSelectedItemIndex(null);
                       setTab("inspect");
                     }}
                     className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left transition ${
@@ -434,15 +525,32 @@ export function EditorShell() {
         </aside>
 
         <main className="relative min-w-0 flex-1">
-          <MapEditor
-            layout={layout}
-            selectedPageId={selectedPageId}
-            invalidPageIds={invalidPageIds}
-            onSelectPage={setSelectedPageId}
-            onMovePage={movePage}
-            onAddPage={addPage}
-            onToggleLink={toggleLinkState}
-          />
+          {view === "map" ? (
+            <MapEditor
+              layout={layout}
+              selectedPageId={selectedPageId}
+              invalidPageIds={invalidPageIds}
+              onSelectPage={(pageId) => {
+                setSelectedPageId(pageId);
+                setSelectedItemIndex(null);
+              }}
+              onMovePage={movePage}
+              onAddPage={addPage}
+              onToggleLink={toggleLinkState}
+            />
+          ) : (
+            <GridView
+              layout={layout}
+              page={selectedPage}
+              inventory={inventory}
+              selectedIndex={selectedItemIndex}
+              onSelect={setSelectedItemIndex}
+              onAdd={addItem}
+              onUpdate={updateItem}
+              onDelete={deleteItem}
+              onNotice={flash}
+            />
+          )}
         </main>
 
         <aside className="flex w-80 shrink-0 flex-col border-l border-[#1e1e1e] bg-[#0e0e0e]">

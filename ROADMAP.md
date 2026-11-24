@@ -14,14 +14,16 @@ Status order is the agreed build priority. Data shapes for every module already 
 - [x] Android-compatible validation panel with click-to-select
 - [x] Layout JSON import and export (`voidlauncher-backup.json`)
 
-## 2. Widget and app-list placement editor — **next**
+## 2. Widget and app-list placement editor — **done (v1)**
 
-- [ ] Inventory import (`voidlauncher-inventory.json`): apps, built-in widgets, system widgets
-- [ ] Per-page grid renderer at the phone's aspect ratio
-- [ ] Place, select, move, resize and delete items (1-based col/row, spans)
-- [ ] Built-in widget placement: `APP_LIST`, `CLOCK`, `PAGE_INFO`
-- [ ] App shortcut placement from the imported app list
-- [ ] Item reference validation surfaced in the issues panel
+- [x] Inventory import (`voidlauncher-inventory.json`): apps, built-in widgets, system widgets
+- [x] Per-page grid renderer sized to the page's columns and rows
+- [x] Place, select, move, resize and delete items (1-based col/row, spans)
+- [x] Built-in widget placement: `APP_LIST`, `CLOCK`, `PAGE_INFO`
+- [x] App shortcut placement from the imported app list, with overlap blocking
+- [x] System widget placement using the inventory's minimum spans
+- [x] Item bounds follow `col + colSpan <= gridCols` so exports pass Android validation
+- [ ] Custom widget placement (`custom:<id>`) — waits on the bundle module
 
 ## 3. Import / export module
 

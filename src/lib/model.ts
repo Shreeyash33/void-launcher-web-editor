@@ -322,6 +322,64 @@ export function normalizeLayout(raw: unknown): LayoutDocument {
   };
 }
 
+export function createEmptyInventory(): DeviceInventory {
+  return {
+    version: 1,
+    grid: { cols: 10, rows: 20 },
+    builtInWidgets: ["APP_LIST", "CLOCK", "PAGE_INFO"],
+    apps: [],
+    systemWidgets: [],
+  };
+}
+
+export function normalizeInventory(raw: unknown): DeviceInventory {
+  const r = asObject(raw);
+  if (!r) return createEmptyInventory();
+  const grid = asObject(r.grid);
+  const apps = Array.isArray(r.apps)
+    ? r.apps
+        .map((entry) => asObject(entry))
+        .filter((entry): entry is Record<string, unknown> => !!entry)
+        .map((entry) => ({
+          packageName: asString(entry.packageName),
+          label: asString(entry.label, asString(entry.packageName)),
+        }))
+        .filter((entry) => entry.packageName.length > 0)
+    : [];
+  const systemWidgets = Array.isArray(r.systemWidgets)
+    ? r.systemWidgets
+        .map((entry) => asObject(entry))
+        .filter((entry): entry is Record<string, unknown> => !!entry)
+        .map((entry) => ({
+          provider: asString(entry.provider),
+          label: asString(entry.label, asString(entry.provider)),
+          minColSpan: Math.max(1, asInt(entry.minColSpan, 1)),
+          minRowSpan: Math.max(1, asInt(entry.minRowSpan, 1)),
+        }))
+        .filter((entry) => entry.provider.length > 0)
+    : [];
+  const builtInWidgets = Array.isArray(r.builtInWidgets)
+    ? r.builtInWidgets.filter(
+        (kind): kind is BuiltInWidgetKind => kind === "APP_LIST" || kind === "CLOCK" || kind === "PAGE_INFO",
+      )
+    : createEmptyInventory().builtInWidgets;
+
+  return {
+    version: 1,
+    ...(typeof r.generatedAt === "string" ? { generatedAt: r.generatedAt } : {}),
+    ...(typeof r.launcherVersion === "string" ? { launcherVersion: r.launcherVersion } : {}),
+    ...(typeof r.contractVersion === "number" ? { contractVersion: r.contractVersion } : {}),
+    ...(asObject(r.device) ? { device: r.device as DeviceInventory["device"] } : {}),
+    grid: {
+      cols: Math.max(1, asInt(grid?.cols, 10)),
+      rows: Math.max(1, asInt(grid?.rows, 20)),
+    },
+    builtInWidgets,
+    apps,
+    systemWidgets,
+  };
+}
+
 export function isHomePage(layout: LayoutDocument, page: Page): boolean {
   return page.coordX === layout.homeCoordX && page.coordY === layout.homeCoordY;
 }
